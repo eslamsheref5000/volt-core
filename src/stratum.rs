@@ -1,0 +1,326 @@
+use std::net::{TcpListener, TcpStream};
+use std::io::{BufRead, BufReader, Write};
+use std::thread;
+use std::sync::{Arc, Mutex};
+use serde::{Serialize, Deserialize};
+use crate::chain::Blockchain;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+#[derive(Serialize, Deserialize, Debug)]
+struct RpcRequest {
+    id: Option<u64>,
+    method: String,
+    params: Vec<serde_json::Value>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct RpcResponse {
+    id: Option<u64>,
+    result: Option<serde_json::Value>,
+    error: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PoolMode {
+    SOLO,
+    PPS,
+    PPLNS,
+    FPPS, // Full Pay Per Share (Reward + Fees)
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+struct Share {
+    miner: String,
+    difficulty: f64,
+    timestamp: u64,
+}
+
+pub struct StratumServer {
+    blockchain: Arc<Mutex<Blockchain>>,
+    port: u16,
+    pool_mode: Arc<Mutex<PoolMode>>,
+    shares: Arc<Mutex<Vec<Share>>>,
+}
+
+impl StratumServer {
+    pub fn new(blockchain: Arc<Mutex<Blockchain>>, port: u16, mode: PoolMode) -> Self {
+        StratumServer { 
+            blockchain, 
+            port,
+            pool_mode: Arc::new(Mutex::new(mode)),
+            shares: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    pub fn start(&self) {
+        let port = self.port;
+        let chain_ref = self.blockchain.clone();
+        let mode_ref = self.pool_mode.clone();
+        let shares_ref = self.shares.clone();
+        
+        thread::spawn(move || {
+            let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).expect("Failed to bind Stratum port");
+            println!("[Stratum] Listening on 0.0.0.0:{} [Mode: {:?}]", port, *mode_ref.lock().unwrap());
+            
+            for stream in listener.incoming() {
+                match stream {
+                    Ok(stream) => {
+                        let chain = chain_ref.clone();
+                        let mode = mode_ref.clone();
+                        let shares = shares_ref.clone();
+                        thread::spawn(move || handle_client(stream, chain, mode, shares));
+                    }
+                    Err(e) => println!("Connection failed: {}", e),
+                }
+            }
+        });
+    }
+}
+
+fn handle_client(
+    stream: TcpStream, 
+    chain: Arc<Mutex<Blockchain>>, 
+    _mode_ref: Arc<Mutex<PoolMode>>,
+    shares_ref: Arc<Mutex<Vec<Share>>>
+) {
+    let _peer_addr = stream.peer_addr().unwrap_or(std::net::SocketAddr::from(([0,0,0,0], 0)));
+    // println!("[Stratum] Client connected: {}", peer_addr);
+    
+    let stream_reader = match stream.try_clone() {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let mut stream_writer_notify = match stream.try_clone() {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let mut stream_writer_resp = stream; // Move original stream here
+
+    // Shared State between Reader and Notifier
+    let session_miner_addr = Arc::new(Mutex::new("SYSTEM_POOL".to_string()));
+    let current_block_template = Arc::new(Mutex::new(None::<crate::block::Block>));
+    let is_authorized = Arc::new(Mutex::new(false));
+    let last_notified_height = Arc::new(Mutex::new(0u64));
+
+    // 1. Spawn Notifier Thread (Proactive Broadcast)
+    let chain_notify = chain.clone();
+    let miner_notify = session_miner_addr.clone();
+    let block_notify = current_block_template.clone();
+    let auth_notify_thread = is_authorized.clone(); // Renamed for clarity
+    let height_notify = last_notified_height.clone();
+
+    thread::spawn(move || {
+        loop {
+            thread::sleep(std::time::Duration::from_millis(500));
+            
+            // Check if authorized
+            if !*auth_notify_thread.lock().unwrap() { continue; }
+
+            let current_height = {
+                if let Ok(c) = chain_notify.lock() {
+                    c.chain.len() as u64
+                } else { continue; }
+            };
+
+            let last_h = *height_notify.lock().unwrap();
+
+            // Notify if New Block (Height changed) OR First Notification (Height mismatch)
+            if current_height != last_h {
+                // Generate New Job
+                let miner = miner_notify.lock().unwrap().clone();
+                let new_block = { // Removed mut, not needed for get_mining_candidate
+                    if let Ok(c) = chain_notify.lock() {
+                        c.get_mining_candidate(miner)
+                    } else { continue; }
+                };
+                
+                // Update Template
+                *block_notify.lock().unwrap() = Some(new_block.clone());
+                *height_notify.lock().unwrap() = current_height;
+
+                // Send Notify
+                let ntime = format!("{:08x}", new_block.timestamp);
+                let job_id = new_block.index.to_string();
+                
+                let prev_bytes = hex::decode(&new_block.previous_hash).unwrap_or(vec![0u8; 32]);
+                let mut prev_le = prev_bytes;
+                prev_le.reverse();
+                let prev_hash_hex = hex::encode(prev_le);
+                
+                let reward_amt = new_block.transactions[0].amount;
+                let amt_hex = hex::encode(reward_amt.to_le_bytes());
+                
+                // Dynamic Coinb1
+                let height_bytes = (new_block.index as u32).to_le_bytes();
+                let height_push = format!("04{}", hex::encode(height_bytes));
+                let coinb1 = format!("010000000100000000000000000000000000000000000000000000000000000000ffffffff0d{}", height_push);
+                
+                let coinb2 = format!("ffffffff01{}1976a91439209d6f37e633202573205730305f523030303088ac00000000", amt_hex);
+                let bits_hex = format!("{:08x}", new_block.difficulty);
+
+                // Merkle Branch
+                let mut branch: Vec<String> = Vec::new();
+                let mut hashes: Vec<Vec<u8>> = new_block.transactions.iter().map(|tx| tx.get_hash()).collect();
+                let mut match_idx = 0;
+                while hashes.len() > 1 {
+                    if hashes.len() % 2 != 0 { hashes.push(hashes.last().unwrap().clone()); }
+                    let mut new_hashes = Vec::new();
+                    if match_idx % 2 == 0 {
+                        if match_idx + 1 < hashes.len() {
+                            branch.push(hex::encode(&hashes[match_idx + 1]));
+                        }
+                    }
+                    for chunk in hashes.chunks(2) {
+                         use sha2::{Sha256, Digest};
+                         let mut hasher = Sha256::new();
+                         hasher.update(&chunk[0]); hasher.update(&chunk[1]);
+                         let r1 = hasher.finalize();
+                         let mut h2 = Sha256::new(); h2.update(r1);
+                         new_hashes.push(h2.finalize().to_vec());
+                    }
+                    hashes = new_hashes;
+                    match_idx /= 2;
+                }
+
+                let notify = serde_json::json!({
+                    "id": null, "method": "mining.notify",
+                    "params": [ job_id, prev_hash_hex, coinb1, coinb2, branch, "00000001", bits_hex, ntime, true ]
+                });
+                
+                if let Ok(n_str) = serde_json::to_string(&notify) {
+                    if stream_writer_notify.write_all((n_str + "\n").as_bytes()).is_err() {
+                        break; // Exit if pipe broken
+                    }
+                }
+            }
+        }
+    });
+
+
+    // 2. Reader Loop (Responses & Submissions)
+    let mut reader = BufReader::new(stream_reader);
+    let mut line = String::new();
+
+    loop {
+        line.clear();
+        match reader.read_line(&mut line) {
+            Ok(0) => break, // EOF
+            Ok(_) => {
+                if let Ok(req) = serde_json::from_str::<RpcRequest>(&line) {
+                    let mut result = None;
+                    
+                    match req.method.as_str() {
+                        "mining.subscribe" => {
+                            result = Some(serde_json::json!([
+                                [ ["mining.set_difficulty", "0.001"], ["mining.notify", "1"] ],
+                                "00000000", 4
+                            ]));
+                        },
+                        "mining.authorize" => {
+                            result = Some(serde_json::json!(true));
+                            *is_authorized.lock().unwrap() = true; // Use original Arc, not the moved clone
+                            
+                            // Send Initial Diff (Standard)
+                            let diff_notify = serde_json::json!({ "id": null, "method": "mining.set_difficulty", "params": [0.001] });
+                            let _ = stream_writer_resp.write_all((serde_json::to_string(&diff_notify).unwrap() + "\n").as_bytes());
+
+                            if let Some(user) = req.params.get(0).and_then(|v| v.as_str()) {
+                                *session_miner_addr.lock().unwrap() = user.to_string();
+                            }
+                            // Trigger immediate update by resetting height
+                            *last_notified_height.lock().unwrap() = 0; 
+                        },
+                        "mining.submit" => {
+                            // Params: [worker_name, job_id, extranonce2, ntime, nonce]
+                            if let (Some(jid), Some(ex2), Some(ntime_hex), Some(nonce_hex)) = (
+                                req.params.get(1).and_then(|v|v.as_str()), 
+                                req.params.get(2).and_then(|v|v.as_str()), 
+                                req.params.get(3).and_then(|v|v.as_str()),
+                                req.params.get(4).and_then(|v|v.as_str())
+                            ) {
+                                let template_guard = current_block_template.lock().unwrap();
+                                if let Some(block_template) = template_guard.as_ref() {
+                                    if jid == block_template.index.to_string() {
+                                        let mut block = block_template.clone();
+                                        
+                                        // 1. Reconstruct Merkle Root
+                                        let reward_amt = block.transactions[0].amount;
+                                        let amt_hex = hex::encode(reward_amt.to_le_bytes());
+                                        
+                                        let height_bytes = (block.index as u32).to_le_bytes();
+                                        let height_push = format!("04{}", hex::encode(height_bytes));
+                                        let coinb1 = format!("010000000100000000000000000000000000000000000000000000000000000000ffffffff0d{}", height_push);
+                                        let coinb2 = format!("ffffffff01{}1976a91439209d6f37e633202573205730305f523030303088ac00000000", amt_hex);
+                                        
+                                        let extra_nonce_1 = "00000000";
+                                        let coinb = format!("{}{}{}{}", coinb1, extra_nonce_1, ex2, coinb2);
+                                        
+                                        if let Ok(coinbase_bytes) = hex::decode(&coinb) {
+                                            use sha2::{Sha256, Digest};
+                                            let mut hasher = Sha256::new(); hasher.update(&coinbase_bytes);
+                                            let r1 = hasher.finalize();
+                                            let mut h2 = Sha256::new(); h2.update(r1);
+                                            
+                                            // Update Header Merkle
+                                            block.merkle_root = hex::encode(h2.finalize().to_vec());
+                                            
+                                            // Update Body (For Integrity Check)
+                                            let mut tx = block.transactions[0].clone();
+                                            tx.script_sig = crate::script::Script::new().push(crate::script::OpCode::OpPush(coinbase_bytes));
+                                            block.transactions[0] = tx;
+                                        }
+
+                                        // 2. Update Header
+                                        if let Ok(n) = u32::from_str_radix(nonce_hex, 16) { block.proof_of_work = n.swap_bytes(); }
+                                        if let Ok(t) = u32::from_str_radix(ntime_hex, 16) { block.timestamp = t as u64; }
+                                        
+                                        block.hash = block.calculate_hash();
+                                        
+                                        // 3. Validate
+                                        // Standard PoW Check
+                                        // For 0x1d00ffff, hash must start with approx "00000000"
+                                        // We will enforce the standard 4-zero Stratum check for now as requested.
+                                        let is_block = block.hash.starts_with("0000");
+
+                                        // Only print if block or valid share (reduce spam)
+                                        if is_block {
+                                            println!("[Pool] BLOCK FOUND by {}! Hash: {}", session_miner_addr.lock().unwrap(), block.hash);
+                                            let mut chain_lock = chain.lock().unwrap();
+                                            if chain_lock.submit_block(block.clone()) {
+                                                chain_lock.save();
+                                                result = Some(serde_json::json!(true));
+                                            } else {
+                                                result = Some(serde_json::json!(false));
+                                            }
+                                        } else {
+                                            // Share Acceptance
+                                            let mut s_lock = shares_ref.lock().unwrap();
+                                             // Ring Buffer
+                                            if s_lock.len() > 5000 { s_lock.remove(0); }
+                                            s_lock.push(Share {
+                                                miner: session_miner_addr.lock().unwrap().clone(),
+                                                difficulty: block.difficulty as f64,
+                                                timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+                                            });
+                                            result = Some(serde_json::json!(true)); 
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        _ => {}
+                    }
+                    
+                    if let Some(res) = result {
+                        let resp = RpcResponse { id: req.id, result: Some(res), error: None };
+                        if let Ok(resp_str) = serde_json::to_string(&resp) {
+                            let _ = stream_writer_resp.write_all((resp_str + "\n").as_bytes());
+                        }
+                    }
+                }
+            }
+            Err(_) => break,
+        }
+    }
+}

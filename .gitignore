@@ -1,0 +1,28 @@
+# Rust
+target/
+**/*.rs.bk
+debug/
+release/
+build/
+.cargo/
+
+# Database
+volt.db/
+*.db
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Secrets
+wallet.key
+*.pem
