@@ -5,7 +5,8 @@
 ## 🚀 Features
 
 - **Built in Rust**: Safe, concurrent, and blazing fast.
-- **Proof-of-Work (PoW)**: Uses valid SHA-256 for consensus.
+- **Algorithm**: SHA-256d (Double SHA-256) - True Bitcoin Standard.
+- **Max Supply**: 21,000,000 VLT.
 - **Asset Issuance**: Native support for creating custom tokens on-chain.
 - **Decentralized**: No pre-mine, fair launch, and community-driven.
 - **Cross-Platform**: Runs on Windows, Linux, and macOS.
@@ -24,7 +25,7 @@ Clone the repository and build the release binary:
 ```bash
 git clone https://github.com/eslamsheref5000/volt-core.git
 cd volt_core
-cargo build --release
+cargo build --release --bin volt_core
 ```
 
 The binary will be located at `target/release/volt_core`.
@@ -36,6 +37,15 @@ To start a full node and sync with the network:
 ```bash
 ./target/release/volt_core
 ```
+
+### Manual Connection (Troubleshooting)
+If your nodes are on the same local network but can't find each other, connect manually using the Local IP:
+
+```bash
+# Example: Adding a peer manually
+./target/release/volt_core 6000 192.168.1.X:6000
+```
+*(Replace `192.168.1.X` with the IP of your running node)*
 
 ### Configuration
 On first run, a `config.toml` and `wallet.key` will be generated.
