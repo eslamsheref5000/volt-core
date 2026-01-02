@@ -3,7 +3,7 @@ use crate::block::Block;
 use crate::transaction::{Transaction, TxType};
 use crate::db::Database;
 use crate::script::VirtualMachine;
-use std::collections::{HashMap, BTreeMap};
+use std::collections::{HashMap, BTreeMap, HashSet};
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Order {
@@ -205,6 +205,11 @@ impl Blockchain {
         if let Some(ref db) = blockchain.db {
             if let Some(chain_data) = db.load_chain() {
                 blockchain.chain = chain_data;
+                // Restore Mempool
+                if let Ok(pending) = db.load_pending_txs() {
+                    blockchain.pending_transactions = pending;
+                    println!("[Chain] Restored {} pending transactions from DB", blockchain.pending_transactions.len());
+                }
                 blockchain.rebuild_state();
             } else {
                 blockchain.create_genesis_block();
@@ -974,6 +979,11 @@ impl Blockchain {
          if let Some(ref db) = self.db {
              let _ = db.save_block(&block);
          }
+         
+         // Fix: Remove confirmed transactions from pending pool to prevent replay/stuck
+         let confirmed: HashSet<Vec<u8>> = block.transactions.iter().map(|tx| tx.get_hash()).collect();
+         self.pending_transactions.retain(|tx| !confirmed.contains(&tx.get_hash()));
+
          true
     }
 
@@ -1066,7 +1076,7 @@ impl Blockchain {
         new_bits
     }
 
-    fn calculate_reward(&self, height: u64) -> u64 {
+    pub fn calculate_reward(&self, height: u64) -> u64 {
         let halving_interval = 105_000; // Accelerated Schedule (Results in ~21M Total Supply still? No, actually 10.5M if base is same... Wait, User said "Approx 4 Years" for 210k. 105k is 2 years. Supply curve depends on this. I will just change the number as requested.)
         let initial_reward = 50 * 100_000_000; // 50 VLT in Atomic Units
         let halvings = height / halving_interval;
@@ -1085,8 +1095,9 @@ impl Blockchain {
     }
 
     pub fn save(&self) {
-        if let Some(ref _db) = self.db {
-            // flushed
+        if let Some(ref db) = self.db {
+            let _ = db.save_pending_txs(&self.pending_transactions);
+            // flushed by db call
         }
     }
 

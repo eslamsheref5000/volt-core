@@ -122,6 +122,40 @@ impl Database {
         Ok(result)
     }
 
+    // Helper: Pending Transactions Tree
+    fn pending_txs_tree(&self) -> sled::Result<sled::Tree> {
+        self.db.open_tree("pending_txs")
+    }
+
+    pub fn save_pending_txs(&self, txs: &Vec<Transaction>) -> sled::Result<()> {
+        let tree = self.pending_txs_tree()?;
+        tree.clear()?; 
+        
+        for (i, tx) in txs.iter().enumerate() {
+            let key = i.to_be_bytes(); 
+            let val = serde_json::to_vec(tx).unwrap();
+            tree.insert(key, val)?;
+        }
+        self.db.flush()?;
+        Ok(())
+    }
+
+    pub fn load_pending_txs(&self) -> sled::Result<Vec<Transaction>> {
+        let tree = self.pending_txs_tree()?;
+        let mut txs = Vec::new();
+        // Since we used index as key, robust iteration is sorted if we scan, but iter() is usually sorted by key in sled.
+        // Let's verify sort. Sled iter is over keys. Keys are BigEndian Block Index? No here it is index i.
+        // usize to_be_bytes sorts correctly.
+        for item in tree.iter() {
+            if let Ok((_, val)) = item {
+                if let Ok(tx) = serde_json::from_slice::<Transaction>(&val) {
+                    txs.push(tx);
+                }
+            }
+        }
+        Ok(txs)
+    }
+
     pub fn get_balance(&self, address: &str, token: &str) -> u64 {
         // Sled doesn't have SQL SUM. We must iterate history.
         // Optimization: In a real DB we'd store "Balances" tree.
