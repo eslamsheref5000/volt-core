@@ -29,6 +29,7 @@ struct ApiRequest {
     // New params for explorer
     start_index: Option<usize>,
     end_index: Option<usize>,
+    pub height: Option<usize>, // Explicit height param
     // New params for Volt Pay
     since_timestamp: Option<u64>,
     // V2: Token & Staking
@@ -710,6 +711,53 @@ fn handle_request(
              *wallet_lock = Wallet::new();
              
              ApiResponse { status: "success".to_string(), message: "Wallet Locked".to_string(), data: None }
+        },
+
+        "get_block" => {
+             // Supports lookup by hash (string) or height (u64 inside generic data or re-using timestamp field? No, ApiRequest doesn't have height param).
+             // Checking ApiRequest struct: it has start_index/end_index, but not generic height. 
+             // Workaround: Use 'start_index' as height if provided, OR check 'hash'.
+             // Actually, the new ApiRequest has `hash` now.
+             
+             let chain = blockchain.lock().unwrap();
+             let mut block = None;
+
+             if let Some(h) = req.hash {
+                 block = chain.chain.iter().find(|b| b.hash == h);
+             } else if let Some(idx) = req.height.or(req.start_index) { // Use height or fallback to start_index
+                 if idx < chain.chain.len() {
+                     block = Some(&chain.chain[idx]);
+                 }
+             }
+             // Handle 'height' if passed as a specific field (not in struct yet).
+             // The frontend sends { "command": "get_block", "height": 123 }.
+             // But ApiRequest struct needs 'height' field.
+             // I will stick to 'start_index' or 'hash'.
+             // Wait, frontend sends 'height'. The JSON deserializer will FAIL if `ApiRequest` doesn't have `height`.
+             // I must ADD `height` to ApiRequest struct first? 
+             // OR I can use `start_index` alias in frontend?
+             // No, I should update ApiRequest struct. But I just updated it.
+             // Let's check if I can use `start_index` (which is usize) for height.
+             // I will modify the frontend to send `start_index` instead of `height` later?
+             // NO, easier to add `height: Option<usize>` to ApiRequest.
+             
+             if let Some(b) = block {
+                 // Convert to JSON including TX count
+                 // We need to clone specific fields or return full block
+                 // Returning full block structure via serde
+                 let mut b_json = serde_json::to_value(b).unwrap();
+                 b_json["tx_count"] = serde_json::json!(b.transactions.len());
+                 // Pre-calculate TXS with simplified view or full?
+                 // Frontend expects 'txs' array probably.
+                 
+                 ApiResponse {
+                     status: "success".to_string(),
+                     message: "Block found".to_string(),
+                     data: Some(b_json)
+                 }
+             } else {
+                 ApiResponse { status: "error".to_string(), message: "Block not found".to_string(), data: None }
+             }
         },
 
         "get_transaction" => {
