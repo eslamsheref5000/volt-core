@@ -120,10 +120,12 @@ impl StratumServer {
                                      }
                                      
                                      for (miner, bal) in balances {
-                                         if bal >= 100_000_000 { // Threshold: 1 VLT
+                                         let fee = 100_000;
+                                         if bal >= 100_000_000 && bal > fee { // Threshold: 1 VLT
                                              current_nonce += 1;
+                                             let net_payout = bal - fee;
                                              let mut tx = crate::transaction::Transaction::new(
-                                                 pool_addr.to_string(), miner.clone(), bal, "VLT".to_string(), current_nonce
+                                                 pool_addr.to_string(), miner.clone(), net_payout, "VLT".to_string(), current_nonce
                                              );
                                              tx.sign(&signing_key);
                                              txs_to_push.push(tx);
@@ -457,16 +459,26 @@ fn handle_client(
                                                                 // Generate Transactions
                                                                 for (miner, score) in miner_scores {
                                                                     let share_ratio = score as f64 / total_valid_shares as f64;
-                                                                    let payout = (total_reward as f64 * share_ratio) as u64;
+                                                                    let gross_payout = (total_reward as f64 * share_ratio) as u64;
+                                                                    let fee = 100_000; // Standard Tx Fee
                                                                     
-                                                                    if payout > 0 {
+                                                                    if gross_payout > fee {
+                                                                        let net_payout = gross_payout - fee;
                                                                         current_nonce += 1;
                                                                         let mut tx = crate::transaction::Transaction::new(
-                                                                            pool_addr.to_string(), miner.clone(), payout, "VLT".to_string(), current_nonce
+                                                                            pool_addr.to_string(), miner.clone(), net_payout, "VLT".to_string(), current_nonce
                                                                         );
                                                                         tx.sign(&signing_key);
-                                                                        println!("[Pool PPLNS] Payout: {} VLT to {} (Nonce: {})", payout as f64 / 1e8, miner, current_nonce);
+                                                                        println!("[Pool PPLNS] Payout: {} VLT (Gross: {}, Fee: {}) to {} (Nonce: {})", 
+                                                                            net_payout as f64 / 1e8, 
+                                                                            gross_payout as f64 / 1e8,
+                                                                            fee as f64 / 1e8,
+                                                                            miner, 
+                                                                            current_nonce
+                                                                        );
                                                                         chain_lock.pending_transactions.push(tx);
+                                                                    } else {
+                                                                        // println!("[Pool PPLNS] Skipped Dust Payout: {} VLT to {}", gross_payout as f64 / 1e8, miner);
                                                                     }
                                                                 }
                                                                 
