@@ -32,6 +32,7 @@ struct ApiRequest {
     // New params for Volt Pay
     since_timestamp: Option<u64>,
     // V2: Token & Staking
+    pub hash: Option<String>, // Added for get_transaction
     pub data: Option<serde_json::Value>, // Generic payload for complex objects
 }
 
@@ -709,6 +710,49 @@ fn handle_request(
              *wallet_lock = Wallet::new();
              
              ApiResponse { status: "success".to_string(), message: "Wallet Locked".to_string(), data: None }
+        },
+
+        "get_transaction" => {
+            if let Some(hash) = req.hash {
+                let chain = blockchain.lock().unwrap();
+                
+                // 1. Check Mempool
+                for tx in &chain.pending_transactions {
+                    if tx.calculate_hash() == hash {
+                        let mut t = serde_json::to_value(tx).unwrap();
+                        t["status"] = serde_json::json!("pending");
+                        t["confirmations"] = serde_json::json!(0);
+                        return ApiResponse {
+                            status: "success".to_string(),
+                            message: "Transaction found in mempool".to_string(),
+                            data: Some(t)
+                        };
+                    }
+                }
+
+                // 2. Check Chain
+                for block in chain.chain.iter().rev() {
+                    for tx in &block.transactions {
+                        if tx.calculate_hash() == hash {
+                             let mut t = serde_json::to_value(tx).unwrap();
+                             t["status"] = serde_json::json!("confirmed");
+                             t["block_height"] = serde_json::json!(block.index);
+                             t["timestamp"] = serde_json::json!(block.timestamp);
+                             t["confirmations"] = serde_json::json!(chain.chain.len() as u64 - block.index + 1);
+                             t["hash"] = serde_json::json!(hash); // Ensure hash is present
+                             return ApiResponse {
+                                 status: "success".to_string(),
+                                 message: "Transaction found".to_string(),
+                                 data: Some(t)
+                             };
+                        }
+                    }
+                }
+
+                ApiResponse { status: "error".to_string(), message: "Transaction not found".to_string(), data: None }
+            } else {
+                 ApiResponse { status: "error".to_string(), message: "Missing hash parameter".to_string(), data: None }
+            }
         },
 
         "get_recent_txs" => {
