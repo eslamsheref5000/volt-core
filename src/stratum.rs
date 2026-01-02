@@ -142,13 +142,15 @@ impl StratumServer {
                                      chain.pending_transactions.push(tx);
                                  }
                                  
-                                 // Debit DB
                                  if let Some(ref db) = chain.db {
                                      for (miner, waiting_bal) in updates {
                                          let _ = db.debit_miner(&miner, waiting_bal);
                                          println!("[Pool PPS] Paid {} VLT to {}", waiting_bal as f64 / 1e8, miner);
                                      }
                                  }
+                                 
+                                 // CRITICAL: Save chain to persist pending transactions!
+                                 chain.save();
                              }
                         }
                     }
