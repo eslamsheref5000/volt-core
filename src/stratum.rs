@@ -332,7 +332,15 @@ fn handle_client(
                                                                 println!("[Pool Config] Loaded Owner Address: {}", pool_addr_dynamic);
 
 
-                                                                let total_reward = 50 * 100_000_000;
+                                                                // Dynamic Reward (Halving Aware)
+                                                                let current_height = chain_lock.chain.len() as u64;
+                                                                // Note: We just accepted a block, so chain length includes it.
+                                                                // The reward we are distributing IS for the block at `current_height - 1` (last block).
+                                                                // Actually, wait. `submit_block` appends to chain.
+                                                                // So `chain.len()` is now N. The block index is N-1.
+                                                                // calculate_reward takes height.
+                                                                let total_reward = chain_lock.calculate_reward(current_height);
+                                                                // println!("[Pool Debug] Height: {}, Reward: {}", current_height, total_reward);
                                                                 
                                                                 // Group by Miner
                                                                 let mut miner_scores = std::collections::HashMap::new();
@@ -398,6 +406,10 @@ fn handle_client(
                                                     // Formula: (PoolDiff / NetDiff) * BlockReward
                                                     let pool_diff = 0.001;
                                                     
+                                                    // Dynamic Reward (Halving Aware)
+                                                    let current_height = chain_lock.chain.len() as u64;
+                                                    let block_reward = chain_lock.calculate_reward(current_height + 1); // +1 because we are mining the NEXT block
+                                                    
                                                     // Convert Bits to Difficulty (Approx for Testnet/MVP)
                                                     // 0x1d00ffff = Diff 1
                                                     let bits = block.difficulty;
@@ -410,7 +422,7 @@ fn handle_client(
 
                                                     if net_diff > 0.0 {
                                                         let ratio = pool_diff / net_diff as f64;
-                                                        let reward = (ratio * 50.0 * 100_000_000.0) as u64;
+                                                        let reward = (ratio * block_reward as f64) as u64;
                                                         
                                                         if reward > 0 {
                                                             let _ = db.credit_miner(&miner_addr, reward);
