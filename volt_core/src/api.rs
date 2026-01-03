@@ -84,8 +84,8 @@ impl ApiServer {
         let node = self.node.clone();
 
         thread::spawn(move || {
-            let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).expect("Failed to bind API port");
-            println!("[API] Server listening on 0.0.0.0:{} (Public Access Enabled)", port);
+            let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).expect("Failed to bind API port");
+            println!("[API] Server listening on 127.0.0.1:{} (Local Access Only - Secure)", port);
 
             for stream in listener.incoming() {
                 match stream {
