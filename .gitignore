@@ -1,56 +1,33 @@
-# Rust
-target/
+/target
 **/*.rs.bk
-debug/
-release/
-build/
-.cargo/
-
-# Database
-volt.db/
-*.db
-
-# Logs
-*.log
-logs/
-
-# IDE
-.vscode/
+*.pdb
+*.io
+*.lock
 .idea/
-*.iml
+.vscode/
+
+# Node specific
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# User draft files
+*_draft.txt
+*.log
+wallet.key
+
+# Local Keys
+wallet.dat
+
+# Tools
+gcc_toolchain/
+wallet_app/
+*.exe
+*.dll
+*.zip
 
 # OS
 Thumbs.db
-Desktop.ini
 .DS_Store
-
-# Secrets
-wallet.key
-*.pem
-
-# Dependencies & Build artifacts
-node_modules/
-dist/
-dist-ssr/
-*.local
-
-# Archives
-*.zip
-*.rar
-*.7z
-*.exe
-*.dll
-*.obj
-*.lib
-
-# Ignored Components (Local Only)
-explorer/
-web_deploy/
-tools/
-gcc_toolchain/
-wallet_app/
-Volt_App_Final/
-Volt_App_Stage/
-
-# Editor directories and files
-.vercel

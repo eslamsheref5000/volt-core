@@ -44,3 +44,19 @@ jobs:
       with:
         name: volt-windows-binaries
         path: release/
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Dependencies
+      run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config libcurl4-openssl-dev libjansson-dev libgmp-dev cmake clang
+    - name: Build
+      run: cargo build --verbose --release
+    - name: Rename Linux Binary
+      run: mv target/release/volt_core target/release/volt_core_linux
+    - name: Upload Linux Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: volt-linux
+        path: target/release/volt_core_linux
