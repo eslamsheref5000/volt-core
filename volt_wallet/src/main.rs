@@ -1150,3 +1150,62 @@ impl eframe::App for WalletApp {
         });
     }
 }
+
+// --- Daemon Management ---
+fn spawn_daemon() -> Option<std::process::Child> {
+    use std::process::{Command, Stdio};
+    use std::path::Path;
+    
+    // 1. Locate Volt Core
+    // Check current directory first
+    let mut exe_path = std::env::current_exe().unwrap_or_default();
+    exe_path.pop(); // Remove exename
+    let core_path = exe_path.join("volt_core.exe");
+    
+    if !core_path.exists() {
+        println!("[Wallet] volt_core.exe not found in {:?}. Running in Remote Mode.", exe_path);
+        return None;
+    }
+
+    println!("[Wallet] Found Core at: {:?}", core_path);
+
+    // 2. Auto-Config Password (Simulate "Single Click")
+    let auth_file = exe_path.join("rpc_password.txt");
+    if !auth_file.exists() {
+        let _ = std::fs::write(&auth_file, "auto_generated_secure_password");
+        println!("[Wallet] Created auto-auth password file.");
+    }
+
+    // 3. Spawn Process (Hidden Window on Windows)
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        
+        match Command::new(&core_path)
+            .args(&["--headless"]) // Assuming core supports headless
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdout(Stdio::null()) // Redirect logs to file internally if needed
+            .stderr(Stdio::null())
+            .spawn() 
+        {
+            Ok(child) => {
+                println!("[Wallet] Node started in background (PID: {:?})", child.id());
+                Some(child)
+            },
+            Err(e) => {
+                println!("[Wallet] Failed to start node: {}", e);
+                None
+            }
+        }
+    }
+    
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Linux/Mac fallback
+        match Command::new(&core_path).spawn() {
+             Ok(child) => Some(child),
+             Err(_) => None
+        }
+    }
+}

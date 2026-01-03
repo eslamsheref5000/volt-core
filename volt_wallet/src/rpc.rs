@@ -26,6 +26,15 @@ impl RpcClient {
         let mut map = serde_json::Map::new();
         map.insert("command".to_string(), serde_json::Value::String(command.to_string()));
         
+        // --- AUTH INJECTION ---
+        let mut exe_path = std::env::current_exe().unwrap_or_default();
+        exe_path.pop();
+        let auth_file = exe_path.join("rpc_password.txt");
+        // Default to "volt" if missing or generated value otherwise
+        let pass = std::fs::read_to_string(auth_file).unwrap_or_else(|_| "volt".to_string());
+        map.insert("password".to_string(), serde_json::Value::String(pass.trim().to_string()));
+        // ----------------------
+        
         if let Some(p) = params {
             if let serde_json::Value::Object(obj) = p {
                 for (k, v) in obj {
