@@ -34,17 +34,23 @@ dist/
 dist-ssr/
 *.local
 
-# Ignored Components (Local Only)
-explorer/
-web_deploy/
-tools/
-Volt_App_Final/
-Volt_App_Stage/
-
 # Archives
 *.zip
 *.rar
 *.7z
+*.exe
+*.dll
+*.obj
+*.lib
+
+# Ignored Components (Local Only)
+explorer/
+web_deploy/
+tools/
+gcc_toolchain/
+wallet_app/
+Volt_App_Final/
+Volt_App_Stage/
 
 # Editor directories and files
 .vercel
