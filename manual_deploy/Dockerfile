@@ -24,12 +24,13 @@ RUN curl -L https://github.com/ekzhang/bore/releases/download/v0.6.0/bore-v0.6.0
 RUN curl -L https://github.com/playit-cloud/playit-agent/releases/download/v0.15.13/playit-linux-amd64 -o /usr/local/bin/playit \
     && chmod +x /usr/local/bin/playit
 
+# Download Latest Volt Core Binary (Linux)
+RUN curl -L https://github.com/eslamsheref5000/volt-core/releases/download/latest/volt_core_linux -o /app/volt_core \
+    && chmod +x /app/volt_core
 
-
-# Copy Binary (You must download 'volt-linux' and rename it to 'volt_core' before uploading!)
-COPY --chown=appuser:appuser volt_core /app/volt_core
-COPY --chown=appuser:appuser run.sh /app/run.sh
-COPY --chown=appuser:appuser proxy.py /app/proxy.py
+# Copy Helper Scripts
+COPY --chown=appuser:appuser run.sh /app/
+COPY --chown=appuser:appuser proxy.py /app/
 
 # Permissions
 RUN chmod +x /app/volt_core /app/run.sh && \

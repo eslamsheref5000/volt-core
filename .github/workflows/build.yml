@@ -60,3 +60,13 @@ jobs:
       with:
         name: volt-linux
         path: target/release/volt_core_linux
+
+    - name: Update Release
+      uses: marvinpinto/action-automatic-releases@latest
+      with:
+        repo_token: "${{ secrets.GITHUB_TOKEN }}"
+        automatic_release_tag: "latest"
+        prerelease: false
+        title: "Latest Build"
+        files: |
+          target/release/volt_core_linux
