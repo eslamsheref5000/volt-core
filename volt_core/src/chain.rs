@@ -128,7 +128,10 @@ impl ChainState {
             // Determine what to debit
             let fee_token = "VLT";
             
-            // 1. Debit Fee (Hybrid: Try VLT first, then Token)
+            // 1. Fee Debit Disabled by User Request
+            // Fees are no longer deducted.
+            let fee_paid_in_vlt = true; 
+            /*
             let vlt_bal = self.get_balance(&tx.sender, "VLT");
             let fee_paid_in_vlt = if vlt_bal >= tx.fee {
                 self.set_balance(&tx.sender, "VLT", vlt_bal - tx.fee);
@@ -147,6 +150,7 @@ impl ChainState {
                      return false;
                 }
             }
+            */
 
             // 2. Debit Amount (Token)
             if tx.tx_type == TxType::Transfer || tx.tx_type == TxType::Stake {
@@ -526,17 +530,20 @@ impl Blockchain {
                 let base_min = 100_000; 
                 let effective_min_fee = if min_fee < base_min { base_min } else { min_fee };
                 
+                /*
                 if transaction.fee < effective_min_fee {
                     println!("Rejected: Fee too low. Required: {}, Provided: {}", effective_min_fee, transaction.fee);
                     return false;
                 }
+                */
 
-                let required = transaction.amount + transaction.fee;
+                // Fee excluded from requirement
+                let required = transaction.amount; // + transaction.fee;
                 
                 // Fix Double Spend: Check pending transactions
                 let pending_spent: u64 = self.pending_transactions.iter()
                     .filter(|t| t.sender == transaction.sender && t.token == transaction.token && t.tx_type == TxType::Transfer)
-                    .map(|t| t.amount + t.fee)
+                    .map(|t| t.amount) // + t.fee)
                     .sum();
 
                 if bal < (required + pending_spent) { 
