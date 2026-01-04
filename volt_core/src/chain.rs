@@ -1011,7 +1011,6 @@ impl Blockchain {
          }
          
          for tx in &block.transactions {
-        for tx in &block.transactions {
              if !self.state.apply_transaction(tx) {
                  println!("[Consensus] Error: Transaction Application Failed during block submission");
                  // State is already mutated partially. We should ideally revert.
