@@ -139,6 +139,11 @@ fn main() {
                 log(&format!("Manually connecting to peer: {}", peer), &logs);
                 node.connect_to_peer(peer);
             }
+            else if input.starts_with("UPLOAD ") {
+                let peer = input.replace("UPLOAD ", "");
+                log(&format!("Force-pushing chain to peer: {}", peer), &logs);
+                node.sync_chain_to_peer(peer);
+            }
             else if input == "EXIT" { break; }
         }
     }

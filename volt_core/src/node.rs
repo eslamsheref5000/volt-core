@@ -136,17 +136,6 @@ impl Node {
              let msg = Message::GetChain;
              let json = serde_json::to_string(&msg).unwrap_or_default();
              let _ = stream.write_all(json.as_bytes());
-             // We don't read response here; server thread handles response if peer connects back?
-             // Actually, TcpStream is 1-way unless we keep it open.
-             // Our architecture (start_server) spawns a thread for INCOMING.
-             // For OUTGOING `connect_to_peer`, we write and close?
-             // If we write GetChain, the peer processes it.
-             // It tries to write BACK to the stream.
-             // If we close 'stream' here, peer write fails.
-             // We need to keep this stream open or listen for response?
-             // Since `start_server` handles incoming, the peer must `connect_to_peer` BACK to us to send the Chain?
-             // Or we read response here?
-             // Simplest: Read response here.
              
              let mut de = serde_json::Deserializer::from_reader(&stream);
              if let Ok(Message::Chain(remote_chain)) = Message::deserialize(&mut de) {
@@ -156,6 +145,25 @@ impl Node {
                      println!("[Sync] Sync complete.");
                  }
              }
+        }
+    }
+
+    pub fn sync_chain_to_peer(&self, peer_addr: String) {
+        println!("[Sync] Uploading chain to {}...", peer_addr);
+        if let Ok(mut stream) = TcpStream::connect(&peer_addr) {
+             let chain = self.blockchain.lock().unwrap();
+             let msg = Message::Chain(chain.chain.clone());
+             
+             // Optimized: Send in chunks if needed, but for now sends full JSON
+             let json = serde_json::to_string(&msg).unwrap_or_default();
+             
+             if stream.write_all(json.as_bytes()).is_ok() {
+                 println!("[Sync] Chain data sent successfully.");
+             } else {
+                 println!("[Sync] Failed to send data.");
+             }
+        } else {
+            println!("[Sync] Failed to connect to peer.");
         }
     }
 
