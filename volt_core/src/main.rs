@@ -129,6 +129,16 @@ fn main() {
             // Simple command handler here (subset of previous)
             if input == "START_MINING" { *is_mining.lock().unwrap() = true; log("Mining STARTED", &logs); }
             else if input == "STOP_MINING" { *is_mining.lock().unwrap() = false; log("Mining STOPPED", &logs); }
+            else if input == "STATUS" {
+                let peers = node.peers.lock().unwrap().len();
+                let height = blockchain.lock().unwrap().blocks.len();
+                log(&format!("Status: Height={}, Peers={}, Mining={}", height, peers, *is_mining.lock().unwrap()), &logs);
+            }
+            else if input.starts_with("ADD_NODE ") {
+                let peer = input.replace("ADD_NODE ", "");
+                log(&format!("Manually connecting to peer: {}", peer), &logs);
+                node.connect_to_peer(peer);
+            }
             else if input == "EXIT" { break; }
         }
     }
