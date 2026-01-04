@@ -1,0 +1,37 @@
+FROM ubuntu:22.04
+
+# Install Runtime Dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    gnupg \
+    ca-certificates \
+    libssl-dev \
+    python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Setup User
+RUN useradd -m -u 1000 appuser
+WORKDIR /home/appuser/app
+
+# Download Bore (Free TCP Tunnel)
+RUN curl -L https://github.com/ekzhang/bore/releases/download/v0.6.0/bore-v0.6.0-x86_64-unknown-linux-musl.tar.gz -o bore.tar.gz \
+    && tar -xzf bore.tar.gz \
+    && mv bore /usr/local/bin/bore \
+    && chmod +x /usr/local/bin/bore \
+    && rm bore.tar.gz
+
+# Copy Binary (You must download 'volt-linux' and rename it to 'volt_core' before uploading!)
+COPY --chown=appuser:appuser volt_core /app/volt_core
+COPY --chown=appuser:appuser run.sh /app/run.sh
+COPY --chown=appuser:appuser proxy.py /app/proxy.py
+
+# Permissions
+RUN chmod +x /app/volt_core /app/run.sh && \
+    chown -R appuser:appuser /home/appuser
+
+# Switch to User
+USER appuser
+ENV HOME=/home/appuser
+
+# Run
+CMD ["/app/run.sh"]
