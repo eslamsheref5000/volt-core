@@ -13,12 +13,18 @@ RUN apt-get update && apt-get install -y \
 RUN useradd -m -u 1000 appuser
 WORKDIR /home/appuser/app
 
-# Download Bore (Free TCP Tunnel)
+# Download Bore (Free TCP Tunnel) - KEEPING for P2P redundancy
 RUN curl -L https://github.com/ekzhang/bore/releases/download/v0.6.0/bore-v0.6.0-x86_64-unknown-linux-musl.tar.gz -o bore.tar.gz \
     && tar -xzf bore.tar.gz \
     && mv bore /usr/local/bin/bore \
     && chmod +x /usr/local/bin/bore \
     && rm bore.tar.gz
+
+# Download Playit.gg (Static TCP Tunnel for Mining)
+RUN curl -L https://github.com/playit-cloud/playit-agent/releases/download/v0.15.13/playit-linux-amd64 -o /usr/local/bin/playit \
+    && chmod +x /usr/local/bin/playit
+
+
 
 # Copy Binary (You must download 'volt-linux' and rename it to 'volt_core' before uploading!)
 COPY --chown=appuser:appuser volt_core /app/volt_core

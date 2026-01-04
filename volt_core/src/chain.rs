@@ -122,7 +122,7 @@ impl ChainState {
         });
     }
 
-    pub fn apply_transaction(&mut self, tx: &Transaction) {
+    pub fn apply_transaction(&mut self, tx: &Transaction) -> bool {
         // 1. DEBIT
         if tx.sender != "SYSTEM" {
             // Determine what to debit
@@ -144,6 +144,7 @@ impl ChainState {
                      self.set_balance(&tx.sender, &tx.token, token_bal - tx.fee);
                 } else {
                      println!("CRITICAL: Failed to debit fee for {} (No VLT or {} balance)", tx.sender, tx.token);
+                     return false;
                 }
             }
 
@@ -158,6 +159,7 @@ impl ChainState {
                     self.set_balance(&tx.sender, amount_token, new_amt_bal);
                 } else {
                      // println!("Failed to debit amount");
+                     return false;
                 }
             } else if tx.tx_type == TxType::AddLiquidity {
                  // Handled in separate logic block below? 
@@ -211,6 +213,7 @@ impl ChainState {
         if tx.sender != "SYSTEM" {
             self.nonces.insert(tx.sender.clone(), tx.nonce);
         }
+        true
     }
 }
 
@@ -256,14 +259,18 @@ impl Blockchain {
         self.state = ChainState::new();
         for block in &self.chain {
             for tx in &block.transactions {
-                self.state.apply_transaction(tx);
+                // If a historical transaction fails, we log it but continue (assume DB valid)
+                // In production, this might indicate corruption.
+                if !self.state.apply_transaction(tx) {
+                    println!("[Chain] Warning: Historical transaction application failed: {}", hex::encode(tx.get_hash()));
+                }
             }
         }
     }
     
     // Wrapper for API
-    pub fn apply_transaction_to_state(&mut self, tx: &Transaction) {
-        self.state.apply_transaction(tx);
+    pub fn apply_transaction_to_state(&mut self, tx: &Transaction) -> bool {
+        self.state.apply_transaction(tx)
     }
 
     pub fn get_balance(&self, address: &str, token: &str) -> u64 {
@@ -1004,7 +1011,13 @@ impl Blockchain {
          }
          
          for tx in &block.transactions {
-             self.state.apply_transaction(tx);
+        for tx in &block.transactions {
+             if !self.state.apply_transaction(tx) {
+                 println!("[Consensus] Error: Transaction Application Failed during block submission");
+                 // State is already mutated partially. We should ideally revert.
+                 // For now, return false. P2P will disconnect us or we will re-sync.
+                 return false;
+             }
          }
 
          self.chain.push(block.clone());

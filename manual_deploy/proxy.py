@@ -25,7 +25,7 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
             self._send_cors_headers()
             self.send_header("Content-type", "text/html")
             self.end_headers()
-            self.wfile.write(b"<h1>Volt Node is RUNNING ⚡</h1><p>API Proxy Active on Port 7860</p>")
+            self.wfile.write("<h1>Volt Node is RUNNING ⚡</h1><p>API Proxy Active on Port 7860</p>".encode('utf-8'))
         else:
             self.send_response(404)
             self.end_headers()

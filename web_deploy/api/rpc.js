@@ -28,7 +28,7 @@ export default async function handler(req, res) {
 
     try {
         // console.log(`[Vercel Proxy] Forwarding to ${targetNode}`);
-        const response = await axios.post(targetNode, req.body, { timeout: 5000 });
+        const response = await axios.post(targetNode, req.body, { timeout: 15000 });
         res.status(200).json(response.data);
     } catch (error) {
         console.error(`[Proxy Error] Target: ${targetNode}`, error.message);
